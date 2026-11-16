@@ -3,10 +3,8 @@ import helmet from "helmet";
 import rateLimit from "express-rate-limit";
 import jwt from "jsonwebtoken";
 import cookieParser from "cookie-parser";
-import nodemailer from "nodemailer";
 import bcrypt from "bcryptjs";
 import pg from "pg";
-import crypto from "node:crypto";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -15,7 +13,6 @@ const app = express();
 const pool = new Pool({ connectionString: process.env.DATABASE_URL, ssl: process.env.NODE_ENV === "production" ? { rejectUnauthorized: false } : false });
 const ADMIN = String(process.env.ADMIN_EMAIL || "cristian.damandaman@deped.gov.ph").toLowerCase();
 const SECRET = process.env.SESSION_SECRET;
-const BASE_URL = process.env.APP_BASE_URL || "";
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 if (!SECRET) throw new Error("SESSION_SECRET is required");
 app.set("trust proxy", 1);
@@ -24,12 +21,17 @@ app.use(express.json({ limit: "2mb" }));
 app.use(cookieParser());
 app.use(express.static(path.join(__dirname, "public")));
 const authLimiter = rateLimit({ windowMs: 15 * 60 * 1000, limit: 8, standardHeaders: true, legacyHeaders: false });
-const mailer = () => nodemailer.createTransport({ service: "gmail", auth: { user: process.env.GMAIL_USER, pass: String(process.env.GMAIL_APP_PASSWORD || "").replace(/\s/g, "") } });
 
 async function init() {
   const sql = await import("node:fs/promises");
   const migration = await sql.readFile(path.join(__dirname, "migrations/001_init.sql"), "utf8");
   await pool.query(migration);
+  await pool.query("ALTER TABLE app_admins ADD COLUMN IF NOT EXISTS password_hash TEXT");
+  await pool.query("ALTER TABLE tm_accounts ADD COLUMN IF NOT EXISTS password_hash TEXT");
+  if (process.env.ADMIN_PASSWORD) {
+    const hash = await bcrypt.hash(process.env.ADMIN_PASSWORD, 12);
+    await pool.query("UPDATE app_admins SET password_hash=$1 WHERE email=$2", [hash, ADMIN]);
+  }
 }
 function tokenFor(email, role) { return jwt.sign({ email, role }, SECRET, { expiresIn: "12h", issuer: "division-athletic-meet" }); }
 function setSession(res, email, role) {
@@ -53,53 +55,28 @@ async function tmOnly(req, res, next) {
 async function audit(actor, action, entity, id, details = {}) {
   await pool.query("INSERT INTO audit_logs(actor,action,entity_type,entity_id,details) VALUES($1,$2,$3,$4,$5::jsonb)", [actor, action, entity, id || null, JSON.stringify(details)]);
 }
-async function sendInvitationEmail(email) {
-  if (!process.env.GMAIL_USER || !process.env.GMAIL_APP_PASSWORD || !process.env.MAIL_FROM) throw new Error("Email delivery is not configured yet.");
-  const link = (BASE_URL || "") + "/login";
-  await mailer().sendMail({ from: process.env.MAIL_FROM, to: email, subject: "You are invited: Division Athletic Meet", text: "You have been invited as a Tournament Manager. Open " + link + " and enter this email address to receive a one-time sign-in code." });
-}
-async function sendLoginEmail(email, code) {
-  if (!process.env.GMAIL_USER || !process.env.GMAIL_APP_PASSWORD || !process.env.MAIL_FROM) throw new Error("Email delivery is not configured yet. Ask the administrator to finish setup.");
-  await mailer().sendMail({ from: process.env.MAIL_FROM, to: email, subject: "Your Division Athletic Meet sign-in code", text: "Your sign-in code is " + code + ". It expires in 10 minutes. If you did not request this, ignore this email.", html: "<div style='font-family:Arial;padding:24px'><h2>Division Athletic Meet</h2><p>Your sign-in code is:</p><div style='font-size:32px;font-weight:bold;letter-spacing:8px'>" + code + "</div><p>This code expires in 10 minutes. If you did not request this, ignore this email.</p></div>" });
-}
 app.get("/health", (_req, res) => res.json({ ok: true }));
 app.get("/api/session", identify, async (req, res) => res.json({ email: req.user.email, role: req.user.role }));
-app.post("/api/auth/request", authLimiter, async (req, res) => {
+app.post("/api/auth/login", authLimiter, async (req, res) => {
   try {
     const email = String(req.body.email || "").trim().toLowerCase();
-    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) return res.status(400).json({ error: "Enter a valid email address." });
-    let role = null;
-    if (email === ADMIN) role = "admin";
-    else {
-      const q = await pool.query("SELECT 1 FROM tm_accounts WHERE email=$1 AND active=true UNION SELECT 1 FROM invited_users WHERE email=$1 AND active=true LIMIT 1", [email]);
-      if (q.rowCount) role = "tm";
+    const password = String(req.body.password || "");
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email) || !password) return res.status(400).json({ error: "Enter your email address and password." });
+    let role = "tm", account;
+    if (email === ADMIN) {
+      role = "admin";
+      const q = await pool.query("SELECT email,password_hash FROM app_admins WHERE email=$1", [ADMIN]);
+      account = q.rows[0];
+      if (!account?.password_hash) return res.status(503).json({ error: "Super Admin password is not configured. Add ADMIN_PASSWORD in Render Environment." });
+    } else {
+      const q = await pool.query("SELECT email,password_hash,active FROM tm_accounts WHERE email=$1", [email]);
+      account = q.rows[0];
+      if (!account?.active || !account.password_hash) return res.status(403).json({ error: "This TM account is inactive or has no password. Contact the Super Administrator." });
     }
-    if (!role) return res.status(403).json({ error: "This email has not been invited. Please contact the Super Administrator." });
-    const code = String(crypto.randomInt(0, 1000000)).padStart(6, "0");
-    const hash = await bcrypt.hash(code, 10);
-    await pool.query("INSERT INTO login_codes(email,code_hash,expires_at,attempts) VALUES($1,$2,now()+interval '10 minutes',0) ON CONFLICT(email) DO UPDATE SET code_hash=EXCLUDED.code_hash,expires_at=EXCLUDED.expires_at,attempts=0,created_at=now()", [email, hash]);
-    await sendLoginEmail(email, code);
-    res.json({ ok: true, message: "A sign-in code has been sent to your email." });
-  } catch (e) { console.error(e); res.status(503).json({ error: e.message || "Could not send the email." }); }
-});
-app.post("/api/auth/verify", authLimiter, async (req, res) => {
-  const email = String(req.body.email || "").trim().toLowerCase();
-  const code = String(req.body.code || "").trim();
-  const q = await pool.query("SELECT * FROM login_codes WHERE email=$1 AND expires_at>now()", [email]);
-  if (!q.rows[0]) return res.status(400).json({ error: "The code expired. Request a new one." });
-  if (q.rows[0].attempts >= 5) return res.status(429).json({ error: "Too many attempts. Request a new code." });
-  if (!(await bcrypt.compare(code, q.rows[0].code_hash))) {
-    await pool.query("UPDATE login_codes SET attempts=attempts+1 WHERE email=$1", [email]);
-    return res.status(400).json({ error: "Incorrect verification code." });
-  }
-  let role = email === ADMIN ? "admin" : "tm";
-  if (role === "tm") {
-    const allowed = await pool.query("SELECT 1 FROM tm_accounts WHERE email=$1 AND active=true UNION SELECT 1 FROM invited_users WHERE email=$1 AND active=true LIMIT 1", [email]);
-    if (!allowed.rowCount) return res.status(403).json({ error: "This account is no longer active." });
-  }
-  await pool.query("DELETE FROM login_codes WHERE email=$1", [email]);
-  setSession(res, email, role);
-  res.json({ ok: true, role, email });
+    if (!(await bcrypt.compare(password, account.password_hash))) return res.status(401).json({ error: "Incorrect email or password." });
+    setSession(res, email, role);
+    res.json({ ok: true, role, email });
+  } catch (e) { console.error("Login error:", e); res.status(500).json({ error: "Unable to sign in right now." }); }
 });
 app.post("/api/auth/logout", (_req, res) => { res.clearCookie("dam_session", { path: "/" }); res.json({ ok: true }); });
 
@@ -141,14 +118,16 @@ app.post("/api/admin", identify, adminOnly, async (req, res) => {
     for (const r of (Array.isArray(b.rules) ? b.rules : [])) await pool.query("INSERT INTO scoring_rules(place,points,medal) VALUES($1,$2,$3) ON CONFLICT(place) DO UPDATE SET points=EXCLUDED.points,medal=EXCLUDED.medal", [Number(r.place),Number(r.points),r.medal || ""]);
   } else if (action === "tm") {
     const email = String(b.email || "").trim().toLowerCase();
+    const password = String(b.password || "");
     if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) return res.status(400).json({ error: "Valid TM email required." });
+    if (password.length < 10) return res.status(400).json({ error: "Set a temporary password with at least 10 characters." });
     const ids = Array.isArray(b.event_ids) ? b.event_ids : [];
     if (!ids.length) return res.status(400).json({ error: "Assign at least one event." });
+    const passwordHash = await bcrypt.hash(password, 12);
     await pool.query("INSERT INTO invited_users(email,display_name,active) VALUES($1,$2,true) ON CONFLICT(email) DO UPDATE SET display_name=EXCLUDED.display_name,active=true", [email,b.display_name || email]);
-    await pool.query("INSERT INTO tm_accounts(email,display_name,active) VALUES($1,$2,true) ON CONFLICT(email) DO UPDATE SET display_name=EXCLUDED.display_name,active=true", [email,b.display_name || email]);
+    await pool.query("INSERT INTO tm_accounts(email,display_name,password_hash,active) VALUES($1,$2,$3,true) ON CONFLICT(email) DO UPDATE SET display_name=EXCLUDED.display_name,password_hash=EXCLUDED.password_hash,active=true", [email,b.display_name || email,passwordHash]);
     await pool.query("DELETE FROM tm_event_assignments WHERE email=$1", [email]);
     for (const id of ids) await pool.query("INSERT INTO tm_event_assignments(email,event_id) VALUES($1,$2) ON CONFLICT DO NOTHING", [email,id]);
-    try { await sendInvitationEmail(email); } catch (e) { console.error("Invite email:", e.message); }
   } else return res.status(400).json({ error: "Unknown action." });
   await audit(ADMIN, action, "configuration", null, b);
   res.json({ ok: true });
