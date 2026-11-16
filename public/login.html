@@ -1,12 +1,47 @@
-{
-    "path": "public/login.html",
-    "text": "<!doctype html><html lang=\"en\"><head><meta charset=\"utf-8\"><meta name=\"viewport\" content=\"width=device-width,initial-scale=1\"><title>Staff Sign In | Division Athletic Meet</title><link rel=\"stylesheet\" href=\"/theme.css\"><style>\n@import url('https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@700;800;900&family=DM+Sans:wght@400;600;700&display=swap');*{box-sizing:border-box}body{margin:0;min-height:100vh;display:grid;place-items:center;background:radial-gradient(circle at 20% 20%,#17436a,#071426 58%);color:#f5f8ff;font-family:'DM Sans',sans-serif;padding:20px}.card{width:min(100%,420px);padding:32px;border:1px solid #ffffff24;border-radius:22px;background:#0d2038ed;box-shadow:0 30px 90px #0008}.crest{font-size:38px}.eyebrow{color:#f6c65b;font-size:10px;letter-spacing:3px;font-weight:700;margin-top:16px}.card h1{font:900 40px 'Barlow Condensed';margin:7px 0}.card p{color:#9eb2cb;font-size:13px;line-height:1.6}.card input{width:100%;padding:13px 14px;background:#071629;border:1px solid #294360;border-radius:10px;color:white;font-size:14px;margin:8px 0}.card button{width:100%;padding:13px;border:0;border-radius:10px;background:linear-gradient(135deg,#f7d477,#d89a2d);font-weight:800;margin-top:10px;cursor:pointer}.card button.alt{background:#ffffff12;color:#eaf3ff;border:1px solid #ffffff1c}.msg{font-size:12px;color:#a7f0cf;min-height:20px;margin-top:12px}.err{color:#ffaaaa}small{color:#829ab8}\n</style></head><body><div class=\"card\"><div class=\"crest\">\ud83c\udfc6</div><div class=\"eyebrow\">DIVISION ATHLETIC MEET</div><h1>STAFF PORTAL</h1><p>Sign in using your authorized Tournament Manager or Administrator email. A one-time verification code will be sent to your inbox.</p><div id=\"emailStep\"><input id=\"email\" type=\"email\" autocomplete=\"username webauthn\" placeholder=\"Official email address\" required><button id=\"send\">SEND SIGN-IN CODE</button></div><div id=\"codeStep\" hidden><input id=\"code\" inputmode=\"numeric\" autocomplete=\"one-time-code\" maxlength=\"6\" placeholder=\"6-digit verification code\"><button id=\"verify\">VERIFY & SIGN IN</button><button class=\"alt\" id=\"back\">USE ANOTHER EMAIL</button></div><div class=\"msg\" id=\"msg\"></div><p><small>Access is invitation-only. Contact the meet administrator if you need an account.</small></p><button class=\"alt\" onclick=\"location.href='/'\">\u2190 BACK TO PUBLIC TALLY</button></div>\n<script>
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="theme-color" content="#071426">
+<title>Staff Sign In | Division Athletic Meet</title>
+<style>
+@import url('https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@700;800;900&family=DM+Sans:wght@400;600;700&display=swap');
+*{box-sizing:border-box}body{margin:0;min-height:100vh;display:grid;place-items:center;padding:24px;background:radial-gradient(circle at 18% 15%,#17436a 0,#0b223b 34%,#061321 75%);color:#f5f8ff;font-family:'DM Sans',Arial,sans-serif}
+.card{width:min(100%,460px);padding:38px;border:1px solid rgba(255,255,255,.14);border-radius:22px;background:rgba(8,23,40,.88);box-shadow:0 24px 80px rgba(0,0,0,.38);backdrop-filter:blur(12px)}
+.brand{display:flex;align-items:center;gap:12px;margin-bottom:28px}.crest{width:48px;height:48px;display:grid;place-items:center;border-radius:14px;background:linear-gradient(135deg,#f0c66a,#a87925);color:#102238;font-size:25px}.brand small{display:block;color:#a9c1dc;font-size:11px;letter-spacing:2px;font-weight:700}.brand strong{font-family:'Barlow Condensed',sans-serif;font-size:20px;letter-spacing:1px}
+h1{font-family:'Barlow Condensed',sans-serif;font-size:38px;line-height:1;margin:0 0 12px;letter-spacing:.5px}.intro{color:#c4d3e4;line-height:1.6;font-size:14px;margin:0 0 26px}
+label{display:block;font-size:12px;font-weight:700;color:#d5e1ee;margin:0 0 8px}input{width:100%;height:48px;padding:0 14px;border:1px solid #36516d;border-radius:10px;background:#0b1c30;color:white;font:inherit;outline:none}input:focus{border-color:#e4b95c;box-shadow:0 0 0 3px rgba(228,185,92,.15)}
+button{width:100%;height:48px;margin-top:14px;border:0;border-radius:10px;background:linear-gradient(135deg,#f0c66a,#c99538);color:#17263a;font:700 14px 'DM Sans',sans-serif;cursor:pointer}button:disabled{opacity:.6;cursor:wait}.secondary{margin-top:12px;background:transparent;border:1px solid #405b77;color:#dce8f5}.msg{min-height:22px;margin:14px 0 0;color:#9fc5ee;font-size:13px;line-height:1.5}.msg.err{color:#ff9b9b}.hint{font-size:12px;color:#91a9c2;line-height:1.5;margin-top:18px;text-align:center}.hidden{display:none!important}
+</style>
+</head>
+<body>
+<main class="card">
+<div class="brand"><div class="crest">🏆</div><div><small>OFFICIAL DIVISION EVENT</small><strong>DIVISION ATHLETIC MEET</strong></div></div>
+<h1>STAFF PORTAL</h1>
+<p class="intro">Sign in using your authorized Tournament Manager or Administrator email. A one-time verification code will be sent to your inbox.</p>
+<section id="emailStep">
+<label for="email">EMAIL ADDRESS</label>
+<input id="email" type="email" autocomplete="email" placeholder="name@deped.gov.ph" required>
+<button id="send" type="button">SEND SIGN-IN CODE</button>
+</section>
+<section id="codeStep" class="hidden">
+<label for="code">6-DIGIT VERIFICATION CODE</label>
+<input id="code" inputmode="numeric" autocomplete="one-time-code" maxlength="6" placeholder="Enter your code">
+<button id="verify" type="button">VERIFY &amp; SIGN IN</button>
+<button id="back" class="secondary" type="button">USE A DIFFERENT EMAIL</button>
+</section>
+<p id="msg" class="msg" role="status" aria-live="polite"></p>
+<p class="hint">Access is invitation-only. Contact the meet administrator if you need an account.</p>
+<button class="secondary" type="button" onclick="location.href='/'">← BACK TO PUBLIC TALLY</button>
+</main>
+<script>
 const $=id=>document.getElementById(id);let email="";
-$("send").onclick=async()=>{email=$("email").value.trim().toLowerCase();if(!email)return $("msg").textContent="Enter your email address.";try{$("send").disabled=true;const r=await fetch("/api/auth/request",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({email})});const d=await r.json();if(!r.ok)throw Error(d.error||"Could not send code.");$("emailStep").hidden=true;$("codeStep").hidden=false;$("msg").textContent=d.message||"Check your email for the sign-in code.";$("code").focus()}catch(e){$("msg").textContent=e.message;$("msg").className="msg err"}finally{$("send").disabled=false}};
-$("verify").onclick=async()=>{try{$("verify").disabled=true;const r=await fetch("/api/auth/verify",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({email,code:$("code").value.trim()})});const d=await r.json();if(!r.ok)throw Error(d.error||"Verification failed.");const next=new URLSearchParams(location.search).get("next")||"/";location.replace(next.startsWith("/")&&!next.startsWith("//")?next:"/")}catch(e){$("msg").textContent=e.message;$("msg").className="msg err"}finally{$("verify").disabled=false}};
-$("back").onclick=()=>{$("codeStep").hidden=true;$("emailStep").hidden=false;$("msg").textContent=""};
-fetch("/api/session").then(r=>{if(r.ok)location.replace("/")});
-</script></body></html>",
-    "hash": "2c4808332e4a3e66e6592fe2a0bfe8be4998c0f4c80bbb111eb371f68ca0e781",
-    "total_lines": 10
-}
+$("send").onclick=async()=>{email=$("email").value.trim().toLowerCase();if(!email)return $("msg").textContent="Enter your email address.";try{$("send").disabled=true;$("msg").className="msg";$("msg").textContent="Sending your sign-in code…";const r=await fetch("/api/auth/request",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({email})});const d=await r.json();if(!r.ok)throw Error(d.error||"Could not send code.");$("emailStep").classList.add("hidden");$("codeStep").classList.remove("hidden");$("msg").textContent=d.message||"Check your email for the sign-in code.";$("code").focus()}catch(e){$("msg").className="msg err";$("msg").textContent=e.message}finally{$("send").disabled=false}};
+$("verify").onclick=async()=>{const code=$("code").value.trim();if(!/^\d{6}$/.test(code)){$("msg").className="msg err";$("msg").textContent="Enter the 6-digit code.";return}try{$("verify").disabled=true;$("msg").className="msg";$("msg").textContent="Verifying…";const r=await fetch("/api/auth/verify",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({email,code})});const d=await r.json();if(!r.ok)throw Error(d.error||"Verification failed.");const next=new URLSearchParams(location.search).get("next")||"/";location.replace(next.startsWith("/")&&!next.startsWith("//")?next:"/")}catch(e){$("msg").className="msg err";$("msg").textContent=e.message}finally{$("verify").disabled=false}};
+$("back").onclick=()=>{$("codeStep").classList.add("hidden");$("emailStep").classList.remove("hidden");$("msg").textContent="";$("code").value=""};
+$("email").addEventListener("keydown",e=>{if(e.key==="Enter")$("send").click()});$("code").addEventListener("keydown",e=>{if(e.key==="Enter")$("verify").click()});
+fetch("/api/session").then(r=>{if(r.ok)location.replace("/")}).catch(()=>{});
+</script>
+</body>
+</html>
