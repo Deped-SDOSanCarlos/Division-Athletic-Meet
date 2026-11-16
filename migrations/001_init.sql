@@ -1,0 +1,17 @@
+CREATE EXTENSION IF NOT EXISTS pgcrypto;
+CREATE TABLE IF NOT EXISTS app_admins(email TEXT PRIMARY KEY,display_name TEXT NOT NULL DEFAULT 'Super Administrator',created_at TIMESTAMPTZ NOT NULL DEFAULT now());
+CREATE TABLE IF NOT EXISTS invited_users(email TEXT PRIMARY KEY,display_name TEXT NOT NULL DEFAULT '',invited_at TIMESTAMPTZ NOT NULL DEFAULT now(),active BOOLEAN NOT NULL DEFAULT true);
+CREATE TABLE IF NOT EXISTS tm_accounts(email TEXT PRIMARY KEY,display_name TEXT NOT NULL DEFAULT '',active BOOLEAN NOT NULL DEFAULT true,created_at TIMESTAMPTZ NOT NULL DEFAULT now());
+CREATE TABLE IF NOT EXISTS teams(id UUID PRIMARY KEY DEFAULT gen_random_uuid(),name TEXT NOT NULL UNIQUE,division TEXT NOT NULL DEFAULT 'Overall',color TEXT NOT NULL DEFAULT '#D7A94B',active BOOLEAN NOT NULL DEFAULT true,created_at TIMESTAMPTZ NOT NULL DEFAULT now());
+CREATE TABLE IF NOT EXISTS sports(id UUID PRIMARY KEY DEFAULT gen_random_uuid(),name TEXT NOT NULL UNIQUE,active BOOLEAN NOT NULL DEFAULT true,created_at TIMESTAMPTZ NOT NULL DEFAULT now());
+CREATE TABLE IF NOT EXISTS events(id UUID PRIMARY KEY DEFAULT gen_random_uuid(),sport_id UUID REFERENCES sports(id) ON DELETE SET NULL,name TEXT NOT NULL,category TEXT NOT NULL DEFAULT '',division TEXT NOT NULL DEFAULT 'Overall',status TEXT NOT NULL DEFAULT 'scheduled' CHECK(status IN('scheduled','in_progress','completed')),created_at TIMESTAMPTZ NOT NULL DEFAULT now());
+CREATE TABLE IF NOT EXISTS scoring_rules(place INTEGER PRIMARY KEY CHECK(place BETWEEN 1 AND 20),points NUMERIC(10,2) NOT NULL DEFAULT 0,medal TEXT NOT NULL DEFAULT '');
+CREATE TABLE IF NOT EXISTS tm_event_assignments(email TEXT NOT NULL REFERENCES tm_accounts(email) ON DELETE CASCADE,event_id UUID NOT NULL REFERENCES events(id) ON DELETE CASCADE,PRIMARY KEY(email,event_id));
+CREATE TABLE IF NOT EXISTS results(id UUID PRIMARY KEY DEFAULT gen_random_uuid(),event_id UUID NOT NULL REFERENCES events(id),team_id UUID NOT NULL REFERENCES teams(id),place INTEGER NOT NULL CHECK(place BETWEEN 1 AND 20),points NUMERIC(10,2) NOT NULL DEFAULT 0,performance TEXT NOT NULL DEFAULT '',remarks TEXT NOT NULL DEFAULT '',submitted_by TEXT NOT NULL,submitted_at TIMESTAMPTZ NOT NULL DEFAULT now(),status TEXT NOT NULL DEFAULT 'pending' CHECK(status IN('pending','approved','rejected')),reviewed_by TEXT,reviewed_at TIMESTAMPTZ,review_note TEXT);
+CREATE INDEX IF NOT EXISTS results_status_idx ON results(status);
+CREATE INDEX IF NOT EXISTS results_event_idx ON results(event_id);
+CREATE TABLE IF NOT EXISTS audit_logs(id UUID PRIMARY KEY DEFAULT gen_random_uuid(),actor TEXT NOT NULL,action TEXT NOT NULL,entity_type TEXT NOT NULL,entity_id TEXT,details JSONB NOT NULL DEFAULT '{}'::jsonb,created_at TIMESTAMPTZ NOT NULL DEFAULT now());
+CREATE TABLE IF NOT EXISTS login_codes(email TEXT PRIMARY KEY,code_hash TEXT NOT NULL,expires_at TIMESTAMPTZ NOT NULL,attempts INTEGER NOT NULL DEFAULT 0,created_at TIMESTAMPTZ NOT NULL DEFAULT now());
+CREATE TABLE IF NOT EXISTS app_settings(key TEXT PRIMARY KEY,value JSONB NOT NULL,updated_at TIMESTAMPTZ NOT NULL DEFAULT now());
+INSERT INTO app_admins(email,display_name) VALUES(lower('cristian.damandaman@deped.gov.ph'),'Super Administrator') ON CONFLICT(email) DO NOTHING;
+INSERT INTO scoring_rules(place,points,medal) VALUES(1,10,'Gold'),(2,8,'Silver'),(3,6,'Bronze'),(4,5,''),(5,4,''),(6,3,''),(7,2,''),(8,1,'') ON CONFLICT(place) DO NOTHING;
