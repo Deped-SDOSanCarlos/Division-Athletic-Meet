@@ -1,0 +1,123 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta name="theme-color" content="#10233f">
+<title>Division Athletic Meet | Live Scoring</title>
+<style>
+:root{--navy:#10233f;--blue:#2457a6;--gold:#f2b544;--bg:#f3f6fb;--ink:#17243a;--muted:#68758a;--line:#e3e9f2;--green:#16865b;--red:#c44747}
+*{box-sizing:border-box}body{margin:0;background:var(--bg);font-family:Inter,system-ui,-apple-system,Segoe UI,Arial,sans-serif;color:var(--ink)}
+header{background:linear-gradient(120deg,#10233f,#1d4c83);color:white;padding:26px max(20px,calc((100% - 1180px)/2));}
+.top{display:flex;justify-content:space-between;gap:18px;align-items:center;flex-wrap:wrap}.brand{display:flex;gap:14px;align-items:center}.logo{width:52px;height:52px;border-radius:15px;background:#ffffff1c;display:grid;place-items:center;font-size:26px}
+h1{font-size:clamp(22px,4vw,32px);margin:0 0 5px}.subtitle{color:#d5e2f4;font-size:13px}.live{border:1px solid #ffffff50;border-radius:30px;padding:8px 12px;font-size:12px}
+main{max-width:1180px;margin:26px auto;padding:0 18px 50px}.toolbar{display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap;margin-bottom:18px}
+.tabs{display:flex;gap:7px;flex-wrap:wrap}.tab,button{border:0;border-radius:9px;padding:10px 14px;font-weight:650;cursor:pointer}.tab{background:white;color:var(--muted);border:1px solid var(--line)}.tab.active{background:var(--navy);color:white}
+button.primary{background:var(--blue);color:white}button.secondary{background:#eaf0f8;color:var(--navy)}button.danger{background:#fff0f0;color:var(--red)}button:disabled{opacity:.55;cursor:not-allowed}
+.grid{display:grid;grid-template-columns:repeat(4,1fr);gap:13px;margin-bottom:18px}.stat,.panel{background:white;border:1px solid var(--line);border-radius:15px;padding:17px;box-shadow:0 4px 16px #1b345008}.stat small{color:var(--muted);font-weight:600}.stat strong{display:block;font-size:29px;margin-top:6px}.panel{margin-bottom:17px}.panel h2{font-size:17px;margin:0 0 14px}.panel-head{display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap;margin-bottom:12px}
+table{width:100%;border-collapse:collapse;min-width:600px}th,td{text-align:left;padding:12px 10px;border-bottom:1px solid var(--line);font-size:13px}th{color:var(--muted);font-size:11px;text-transform:uppercase;letter-spacing:.05em;background:#f8fafd}tr:last-child td{border-bottom:0}.table-wrap{overflow:auto}.rank{font-weight:800;color:var(--blue)}.team{font-weight:700}.points{font-weight:800}.medal{font-size:16px}
+.form-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px}label{display:block;font-size:12px;font-weight:700;color:var(--muted);margin-bottom:6px}input,select{width:100%;padding:11px 12px;border:1px solid #d8e0eb;border-radius:9px;background:white;color:var(--ink);font:inherit}input:focus,select:focus{outline:2px solid #b9d1f5;border-color:var(--blue)}.field.full{grid-column:1/-1}.hint{font-size:12px;color:var(--muted);line-height:1.5}.actions{display:flex;gap:9px;flex-wrap:wrap;margin-top:14px}.notice{padding:11px 13px;border-radius:9px;background:#eff6ff;color:#234c83;font-size:12px;margin:12px 0}.status{font-size:12px;color:var(--muted)}.hidden{display:none!important}.empty{text-align:center;color:var(--muted);padding:28px}
+footer{text-align:center;color:var(--muted);font-size:11px;padding:20px}
+@media(max-width:760px){.grid{grid-template-columns:repeat(2,1fr)}.form-grid{grid-template-columns:1fr}main{margin-top:17px}.stat strong{font-size:24px}}
+</style>
+</head>
+<body>
+<header><div class="top"><div class="brand"><div class="logo">🏅</div><div><h1>DIVISION ATHLETIC MEET</h1><div class="subtitle" id="meetSubtitle">Official Live Scoring Dashboard</div></div></div><div class="live">● LIVE SCOREBOARD <span id="syncStatus">· Demo data</span></div></div></header>
+<main>
+ <div class="toolbar"><div class="tabs">
+  <button class="tab active" data-tab="dashboard">Dashboard</button><button class="tab" data-tab="results">Event Results</button><button class="tab" data-tab="encode">Encode Scores</button><button class="tab" data-tab="settings">Setup</button>
+ </div><div><button class="secondary" id="refreshBtn">↻ Refresh</button></div></div>
+ <section id="dashboard">
+  <div class="grid">
+   <div class="stat"><small>Participating Teams</small><strong id="teamCount">0</strong></div><div class="stat"><small>Events Recorded</small><strong id="eventCount">0</strong></div><div class="stat"><small>Total Results</small><strong id="resultCount">0</strong></div><div class="stat"><small>Leading Team</small><strong id="leaderName" style="font-size:20px">—</strong></div>
+  </div>
+  <div class="panel"><div class="panel-head"><h2>🏆 Overall Team Standing</h2><span class="status">Automatically ranked by total points</span></div><div class="table-wrap"><table><thead><tr><th>Rank</th><th>District / Delegation</th><th>Gold</th><th>Silver</th><th>Bronze</th><th>Total Points</th></tr></thead><tbody id="standingBody"></tbody></table></div></div>
+  <div class="panel"><div class="panel-head"><h2>Recent Results</h2><span class="status">Latest encoded results</span></div><div class="table-wrap"><table><thead><tr><th>Event</th><th>Category</th><th>Winner / Team</th><th>Place</th><th>Points</th></tr></thead><tbody id="recentBody"></tbody></table></div></div>
+ </section>
+ <section id="results" class="hidden"><div class="panel"><div class="panel-head"><h2>All Event Results</h2><input id="resultSearch" placeholder="Search event or team..." style="max-width:260px"></div><div class="table-wrap"><table><thead><tr><th>Date</th><th>Event</th><th>Category</th><th>Team</th><th>Place</th><th>Points</th><th>Remarks</th></tr></thead><tbody id="allResultsBody"></tbody></table></div></div></section>
+ <section id="encode" class="hidden"><div class="panel"><h2>📝 Encode Event Result</h2><p class="hint">Enter one placement per submission. The dashboard calculates the points using your configured scoring rules.</p>
+  <div class="form-grid">
+   <div class="field"><label>EVENT NAME</label><input id="eventName" placeholder="e.g. 100m Dash"></div>
+   <div class="field"><label>SPORT / CATEGORY</label><input id="category" placeholder="e.g. Athletics - Secondary Boys"></div>
+   <div class="field"><label>DISTRICT / DELEGATION</label><select id="teamSelect"></select></div>
+   <div class="field"><label>PLACE</label><select id="placeSelect"><option value="1">1st Place</option><option value="2">2nd Place</option><option value="3">3rd Place</option><option value="4">4th Place</option><option value="5">5th Place</option><option value="6">6th Place</option><option value="7">7th Place</option><option value="8">8th Place</option></select></div>
+   <div class="field"><label>RESULT DATE</label><input id="resultDate" type="date"></div>
+   <div class="field"><label>REMARKS (OPTIONAL)</label><input id="remarks" placeholder="e.g. Final round"></div>
+   <div class="field full"><label>SCOREKEEPER PIN</label><input id="scorePin" type="password" placeholder="Enter admin PIN (set in Apps Script)"><div class="hint">Required when connected to Google Sheets. Keep this PIN private.</div></div>
+  </div>
+  <div class="actions"><button class="primary" id="submitResult">Submit Result</button><button class="secondary" id="clearForm">Clear</button></div><div id="formMessage" class="notice hidden"></div>
+ </div></section>
+ <section id="settings" class="hidden">
+  <div class="panel"><h2>⚙️ Meet Configuration</h2><div class="form-grid">
+   <div class="field full"><label>MEET TITLE</label><input id="meetTitle" value="Official Live Scoring Dashboard"></div>
+   <div class="field full"><label>PARTICIPATING DISTRICTS / DELEGATIONS (one per line)</label><textarea id="teamsInput" rows="7" style="width:100%;padding:11px;border:1px solid #d8e0eb;border-radius:9px;font:inherit">San Carlos City
+Calatrava
+Escalante City
+Toboso
+Salvador Benedicto</textarea></div>
+   <div class="field"><label>1ST PLACE POINTS</label><input id="p1" type="number" value="10" min="0"></div><div class="field"><label>2ND PLACE POINTS</label><input id="p2" type="number" value="8" min="0"></div>
+   <div class="field"><label>3RD PLACE POINTS</label><input id="p3" type="number" value="6" min="0"></div><div class="field"><label>4TH PLACE POINTS</label><input id="p4" type="number" value="4" min="0"></div>
+   <div class="field"><label>5TH PLACE POINTS</label><input id="p5" type="number" value="3" min="0"></div><div class="field"><label>6TH PLACE POINTS</label><input id="p6" type="number" value="2" min="0"></div>
+   <div class="field"><label>7TH PLACE POINTS</label><input id="p7" type="number" value="1" min="0"></div><div class="field"><label>8TH PLACE POINTS</label><input id="p8" type="number" value="0" min="0"></div>
+  </div><div class="actions"><button class="primary" id="saveSettings">Save Setup</button></div><p class="hint">Setup is saved in this browser. For a shared official setup, keep the team list and point rules consistent across devices.</p></div>
+  <div class="panel"><h2>Google Sheets Connection</h2><label>APPS SCRIPT WEB APP URL</label><input id="apiUrl" placeholder="https://script.google.com/macros/s/...../exec"><div class="actions"><button class="primary" id="saveConnection">Save Connection</button><button class="secondary" id="testConnection">Test Connection</button></div><div id="connectionMessage" class="notice hidden"></div><p class="hint">Use the deployment URL from your Google Apps Script web app. Anyone with the link can view the public scoreboard; only users with the scorekeeper PIN can submit results.</p></div>
+ </section>
+ <footer>Division Athletic Meet · Live Scoring System · Powered by Google Sheets</footer>
+</main>
+<script>
+const $=id=>document.getElementById(id);
+const defaults={teams:["San Carlos City","Calatrava","Escalante City","Toboso","Salvador Benedicto"],points:{1:10,2:8,3:6,4:4,5:3,6:2,7:1,8:0},title:"Official Live Scoring Dashboard"};
+let config={...defaults,teams:[...defaults.teams],points:{...defaults.points}},results=[];
+const sample=[
+ {date:"2026-11-16",event:"100m Dash",category:"Athletics - Secondary Boys",team:"San Carlos City",place:1,points:10,remarks:"Final"},
+ {date:"2026-11-16",event:"100m Dash",category:"Athletics - Secondary Boys",team:"Calatrava",place:2,points:8,remarks:"Final"},
+ {date:"2026-11-16",event:"Long Jump",category:"Athletics - Secondary Girls",team:"Escalante City",place:1,points:10,remarks:"Final"},
+ {date:"2026-11-16",event:"Chess",category:"Secondary Boys",team:"Toboso",place:3,points:6,remarks:"Team event"}
+];
+let connected=false;
+function loadLocal(){try{const c=JSON.parse(localStorage.getItem("meetConfig"));if(c)config={...config,...c,points:{...config.points,...c.points}};results=JSON.parse(localStorage.getItem("meetResults")||"null")||sample;}catch(e){results=[...sample]}}
+function saveLocal(){localStorage.setItem("meetConfig",JSON.stringify(config));localStorage.setItem("meetResults",JSON.stringify(results))}
+function esc(s){return String(s??"").replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]))}
+function standings(){return config.teams.map(team=>{const rs=results.filter(r=>r.team===team);return {team, gold:rs.filter(r=>+r.place===1).length,silver:rs.filter(r=>+r.place===2).length,bronze:rs.filter(r=>+r.place===3).length,points:rs.reduce((a,r)=>a+(+r.points||0),0)}}).sort((a,b)=>b.points-a.points||b.gold-a.gold||b.silver-a.silver||b.bronze-a.bronze||a.team.localeCompare(b.team))}
+function render(){
+ $("meetSubtitle").textContent=config.title;$("teamCount").textContent=config.teams.length;
+ $("eventCount").textContent=new Set(results.map(r=>r.event+"|"+r.category)).size;$("resultCount").textContent=results.length;
+ const st=standings();$("leaderName").textContent=st[0]?.points?st[0].team:"—";
+ $("standingBody").innerHTML=st.map((s,i)=>`<tr><td class="rank">${i+1}</td><td class="team">${esc(s.team)}</td><td>${s.gold?`🥇 ${s.gold}`:"—"}</td><td>${s.silver?`🥈 ${s.silver}`:"—"}</td><td>${s.bronze?`🥉 ${s.bronze}`:"—"}</td><td class="points">${s.points}</td></tr>`).join("")||'<tr><td colspan="6" class="empty">No teams configured.</td></tr>';
+ const recent=[...results].reverse().slice(0,6);$("recentBody").innerHTML=recent.map(r=>`<tr><td>${esc(r.event)}</td><td>${esc(r.category)}</td><td class="team">${esc(r.team)}</td><td>${r.place}</td><td class="points">${r.points}</td></tr>`).join("")||'<tr><td colspan="5" class="empty">No results yet.</td></tr>';
+ const q=($("resultSearch")?.value||"").toLowerCase();const filtered=[...results].reverse().filter(r=>(r.event+" "+r.category+" "+r.team).toLowerCase().includes(q));
+ $("allResultsBody").innerHTML=filtered.map(r=>`<tr><td>${esc(r.date)}</td><td>${esc(r.event)}</td><td>${esc(r.category)}</td><td>${esc(r.team)}</td><td>${r.place}</td><td class="points">${r.points}</td><td>${esc(r.remarks)}</td></tr>`).join("")||'<tr><td colspan="7" class="empty">No matching results.</td></tr>';
+ $("teamSelect").innerHTML=config.teams.map(t=>`<option>${esc(t)}</option>`).join("");
+}
+function showMessage(id,msg){$(id).textContent=msg;$(id).classList.remove("hidden")}
+function tab(name){document.querySelectorAll("section").forEach(s=>s.classList.toggle("hidden",s.id!==name));document.querySelectorAll(".tab").forEach(b=>b.classList.toggle("active",b.dataset.tab===name))}
+document.querySelectorAll(".tab").forEach(b=>b.addEventListener("click",()=>tab(b.dataset.tab)));
+$("refreshBtn").onclick=refresh;
+$("resultSearch").oninput=render;
+$("resultDate").value=new Date().toISOString().slice(0,10);
+$("clearForm").onclick=()=>["eventName","category","remarks"].forEach(id=>$(id).value="");
+$("saveSettings").onclick=()=>{config.title=$("meetTitle").value.trim()||defaults.title;config.teams=$("teamsInput").value.split("\n").map(x=>x.trim()).filter(Boolean);for(let i=1;i<=8;i++)config.points[i]=Math.max(0,Number($("p"+i).value)||0);saveLocal();render();alert("Setup saved in this browser.")};
+$("saveConnection").onclick=()=>{localStorage.setItem("meetApiUrl",$("apiUrl").value.trim());showMessage("connectionMessage","Connection URL saved.");};
+$("testConnection").onclick=async()=>{try{const u=localStorage.getItem("meetApiUrl");if(!u)throw Error("Enter and save the Apps Script URL first.");const data=await jsonp(u);if(!data.ok)throw Error(data.error||"Unexpected response");showMessage("connectionMessage","Connection successful. Spreadsheet data endpoint responded.");}catch(e){showMessage("connectionMessage","Connection test failed: "+e.message)}};
+$("submitResult").onclick=async()=>{
+ const event=$("eventName").value.trim(),category=$("category").value.trim(),team=$("teamSelect").value,place=Number($("placeSelect").value),date=$("resultDate").value;
+ if(!event||!category||!team||!date){showMessage("formMessage","Please complete the event, category, team and date.");return}
+ const row={date,event,category,team,place,points:Number(config.points[place]||0),remarks:$("remarks").value.trim()};
+ const url=localStorage.getItem("meetApiUrl");
+ if(url){
+  const pin=$("scorePin").value;if(!pin){showMessage("formMessage","Enter the scorekeeper PIN.");return}
+  try{await postToSheet(url,{...row,pin});showMessage("formMessage","Submission sent. Refreshing spreadsheet results…");setTimeout(refresh,1800)}catch(e){showMessage("formMessage","Submission could not be sent: "+e.message)} 
+ }else{results.push(row);saveLocal();render();showMessage("formMessage","Saved in this browser only. Connect Google Sheets in Setup to share results across devices.");}
+};
+function postToSheet(url,data){return new Promise((resolve,reject)=>{
+ const iframe=document.createElement("iframe");iframe.name="submitFrame";iframe.style.display="none";document.body.appendChild(iframe);
+ const form=document.createElement("form");form.method="POST";form.action=url;form.target="submitFrame";form.style.display="none";
+ Object.entries({...data,action:"add"}).forEach(([k,v])=>{const input=document.createElement("input");input.name=k;input.value=v;form.appendChild(input)});
+ document.body.appendChild(form);form.submit();setTimeout(()=>{form.remove();iframe.remove();resolve()},1400);
+})}
+function jsonp(url){return new Promise((resolve,reject)=>{const cb="meetCallback"+Date.now();const script=document.createElement("script");const timer=setTimeout(()=>{cleanup();reject(Error("Timed out reading spreadsheet"))},10000);function cleanup(){clearTimeout(timer);delete window[cb];script.remove()}window[cb]=data=>{cleanup();resolve(data)};script.src=url+(url.includes("?")?"&":"?")+"action=read&callback="+cb;script.onerror=()=>{cleanup();reject(Error("Could not load spreadsheet data"))};document.body.appendChild(script)})}
+async function refresh(){const url=localStorage.getItem("meetApiUrl");if(!url){$("syncStatus").textContent="· Demo / Local";render();return}try{const data=await jsonp(url);if(!data.ok)throw Error(data.error||"Spreadsheet returned an error");results=data.results||[];if(data.teams?.length){config.teams=data.teams}saveLocal();$("syncStatus").textContent="· Synced";render()}catch(e){$("syncStatus").textContent="· Offline";console.warn(e)}}
+function populateSettings(){ $("meetTitle").value=config.title;$("teamsInput").value=config.teams.join("\n");for(let i=1;i<=8;i++)$("p"+i).value=config.points[i]??0;$("apiUrl").value=localStorage.getItem("meetApiUrl")||""}
+loadLocal();populateSettings();render();refresh();
+</script>
+</body></html>
