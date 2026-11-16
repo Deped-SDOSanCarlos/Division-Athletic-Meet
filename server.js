@@ -53,6 +53,11 @@ async function tmOnly(req, res, next) {
 async function audit(actor, action, entity, id, details = {}) {
   await pool.query("INSERT INTO audit_logs(actor,action,entity_type,entity_id,details) VALUES($1,$2,$3,$4,$5::jsonb)", [actor, action, entity, id || null, JSON.stringify(details)]);
 }
+async function sendInvitationEmail(email) {
+  if (!process.env.GMAIL_USER || !process.env.GMAIL_APP_PASSWORD || !process.env.MAIL_FROM) throw new Error("Email delivery is not configured yet.");
+  const link = (BASE_URL || "") + "/login";
+  await mailer().sendMail({ from: process.env.MAIL_FROM, to: email, subject: "You are invited: Division Athletic Meet", text: "You have been invited as a Tournament Manager. Open " + link + " and enter this email address to receive a one-time sign-in code." });
+}
 async function sendLoginEmail(email, code) {
   if (!process.env.GMAIL_USER || !process.env.GMAIL_APP_PASSWORD || !process.env.MAIL_FROM) throw new Error("Email delivery is not configured yet. Ask the administrator to finish setup.");
   await mailer().sendMail({ from: process.env.MAIL_FROM, to: email, subject: "Your Division Athletic Meet sign-in code", text: "Your sign-in code is " + code + ". It expires in 10 minutes. If you did not request this, ignore this email.", html: "<div style='font-family:Arial;padding:24px'><h2>Division Athletic Meet</h2><p>Your sign-in code is:</p><div style='font-size:32px;font-weight:bold;letter-spacing:8px'>" + code + "</div><p>This code expires in 10 minutes. If you did not request this, ignore this email.</p></div>" });
@@ -143,7 +148,7 @@ app.post("/api/admin", identify, adminOnly, async (req, res) => {
     await pool.query("INSERT INTO tm_accounts(email,display_name,active) VALUES($1,$2,true) ON CONFLICT(email) DO UPDATE SET display_name=EXCLUDED.display_name,active=true", [email,b.display_name || email]);
     await pool.query("DELETE FROM tm_event_assignments WHERE email=$1", [email]);
     for (const id of ids) await pool.query("INSERT INTO tm_event_assignments(email,event_id) VALUES($1,$2) ON CONFLICT DO NOTHING", [email,id]);
-    try { await sendLoginEmail(email, "Your account has been invited. Visit " + (BASE_URL || "the Division Athletic Meet site") + " and request a sign-in code."); } catch (e) { console.error("Invite email:", e.message); }
+    try { await sendInvitationEmail(email); } catch (e) { console.error("Invite email:", e.message); }
   } else return res.status(400).json({ error: "Unknown action." });
   await audit(ADMIN, action, "configuration", null, b);
   res.json({ ok: true });
