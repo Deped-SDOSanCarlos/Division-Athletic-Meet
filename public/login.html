@@ -7,5 +7,5 @@
 <script>
 const $=id=>document.getElementById(id);
 async function signIn(){const email=$("email").value.trim().toLowerCase(),password=$("password").value;if(!email||!password){$("msg").className="msg err";$("msg").textContent="Enter your email address and password.";return}try{$("login").disabled=true;$("msg").className="msg";$("msg").textContent="Signing in…";const r=await fetch("/api/auth/login",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({email,password})});const d=await r.json();if(!r.ok)throw Error(d.error||"Sign-in failed.");const next=new URLSearchParams(location.search).get("next")||"/";location.replace(next.startsWith("/")&&!next.startsWith("//")?next:"/")}catch(e){$("msg").className="msg err";$("msg").textContent=e.message}finally{$("login").disabled=false}}
-$("login").onclick=signIn;$("email").addEventListener("keydown",e=>{if(e.key==="Enter")signIn()});$("password").addEventListener("keydown",e=>{if(e.key==="Enter")signIn()});fetch("/api/session").then(r=>{if(r.ok)location.replace("/")}).catch(()=>{});
+$("login").onclick=signIn;$("email").addEventListener("keydown",e=>{if(e.key==="Enter")signIn()});$("password").addEventListener("keydown",e=>{if(e.key==="Enter")signIn()});// Do not auto-redirect based on an existing cookie; allow the user to reach the login form.
 </script></body></html>
