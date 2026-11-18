@@ -130,6 +130,23 @@ app.post("/api/admin", identify, adminOnly, async (req, res) => {
     await pool.query("INSERT INTO tm_accounts(email,display_name,password_hash,active) VALUES($1,$2,$3,true) ON CONFLICT(email) DO UPDATE SET display_name=EXCLUDED.display_name,password_hash=EXCLUDED.password_hash,active=true", [email,b.display_name || email,passwordHash]);
     await pool.query("DELETE FROM tm_event_assignments WHERE email=$1", [email]);
     for (const id of ids) await pool.query("INSERT INTO tm_event_assignments(email,event_id) VALUES($1,$2) ON CONFLICT DO NOTHING", [email,id]);
+  } else if (action === "manual-result") {
+    const eventId=String(b.event_id||""), teamId=String(b.team_id||""), place=Number(b.place);
+    if(!eventId||!teamId||!Number.isInteger(place)||place<1||place>8)return res.status(400).json({error:"Choose an event, team, and valid placement."});
+    const [event,team,rule,duplicate]=await Promise.all([
+      pool.query("SELECT id FROM events WHERE id=$1 AND active=true",[eventId]),
+      pool.query("SELECT id FROM teams WHERE id=$1 AND active=true",[teamId]),
+      pool.query("SELECT points FROM scoring_rules WHERE place=$1",[place]),
+      pool.query("SELECT id FROM results WHERE event_id=$1 AND place=$2 AND status IN('pending','approved')",[eventId,place])
+    ]);
+    if(!event.rowCount)return res.status(400).json({error:"Select an active event."});
+    if(!team.rowCount)return res.status(400).json({error:"Select an active team."});
+    if(!rule.rowCount)return res.status(400).json({error:"No scoring rule exists for this placement."});
+    if(duplicate.rowCount)return res.status(409).json({error:"A result for this event and placement already exists. Correct or delete it first."});
+    const points=b.points===undefined||b.points===""?Number(rule.rows[0].points):Number(b.points);
+    if(!Number.isFinite(points)||points<0)return res.status(400).json({error:"Enter valid non-negative points."});
+    const q=await pool.query("INSERT INTO results(event_id,team_id,place,points,performance,remarks,submitted_by,status,reviewed_by,reviewed_at) VALUES($1,$2,$3,$4,$5,$6,$7,'approved',$7,now()) RETURNING id",[eventId,teamId,place,points,String(b.performance||"").slice(0,100),String(b.remarks||"").slice(0,500),ADMIN]);
+    await audit(ADMIN,"manual-approved-result","result",q.rows[0].id,{event_id:eventId,team_id:teamId,place,points});
   } else return res.status(400).json({ error: "Unknown action." });
   await audit(ADMIN, action, "configuration", null, b);
   res.json({ ok: true });
