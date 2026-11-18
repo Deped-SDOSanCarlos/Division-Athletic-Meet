@@ -183,7 +183,7 @@ app.delete("/api/admin", identify, adminOnly, async (req, res) => {
 app.get("/api/tm", identify, tmOnly, async (req, res) => {
   const email = req.user.email;
   const [events,submissions,teams,rules] = await Promise.all([
-    pool.query("SELECT e.id,e.name,e.category,e.division,s.name AS sport FROM tm_event_assignments a JOIN events e ON e.id=a.event_id LEFT JOIN sports s ON s.id=e.sport_id WHERE a.email=$1 ORDER BY s.name,e.name", [email]),
+    pool.query("SELECT e.id,e.name,e.category,e.division,s.name AS sport FROM tm_event_assignments a JOIN events e ON e.id=a.event_id LEFT JOIN sports s ON s.id=e.sport_id WHERE a.email=$1 AND e.active=true ORDER BY s.name,e.name", [email]),
     pool.query("SELECT r.id,r.place,r.points,r.status,r.submitted_at,r.performance,r.remarks,e.name AS event,t.name AS team FROM results r JOIN events e ON e.id=r.event_id JOIN teams t ON t.id=r.team_id WHERE lower(r.submitted_by)=lower($1) ORDER BY r.submitted_at DESC LIMIT 50", [email]),
     pool.query("SELECT id,name,division FROM teams WHERE active=true ORDER BY name"),
     pool.query("SELECT place,points,medal FROM scoring_rules ORDER BY place")
