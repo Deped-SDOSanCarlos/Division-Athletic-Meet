@@ -28,6 +28,7 @@ async function init() {
   await pool.query(migration);
   await pool.query("ALTER TABLE app_admins ADD COLUMN IF NOT EXISTS password_hash TEXT");
   await pool.query("ALTER TABLE tm_accounts ADD COLUMN IF NOT EXISTS password_hash TEXT");
+  await pool.query("ALTER TABLE events ADD COLUMN IF NOT EXISTS active BOOLEAN NOT NULL DEFAULT true");
   if (process.env.ADMIN_PASSWORD) {
     const hash = await bcrypt.hash(process.env.ADMIN_PASSWORD, 12);
     await pool.query("UPDATE app_admins SET password_hash=$1 WHERE email=$2", [hash, ADMIN]);
@@ -83,7 +84,7 @@ app.post("/api/auth/logout", (_req, res) => { res.clearCookie("dam_session", { p
 app.get("/api/board", async (_req, res) => {
   const [teams, events, results, rules, settings] = await Promise.all([
     pool.query("SELECT id,name,division,color FROM teams WHERE active=true ORDER BY division,name"),
-    pool.query("SELECT e.id,e.name,e.category,e.division,e.status,s.name AS sport FROM events e LEFT JOIN sports s ON s.id=e.sport_id ORDER BY s.name,e.name"),
+    pool.query("SELECT e.id,e.name,e.category,e.division,e.status,s.name AS sport FROM events e LEFT JOIN sports s ON s.id=e.sport_id WHERE e.active=true ORDER BY s.name,e.name"),
     pool.query("SELECT r.id,r.place,r.points,r.performance,r.remarks,r.reviewed_at,e.name AS event,e.category,e.division,t.name AS team,s.name AS sport FROM results r JOIN events e ON e.id=r.event_id JOIN teams t ON t.id=r.team_id LEFT JOIN sports s ON s.id=e.sport_id WHERE r.status='approved' ORDER BY r.reviewed_at DESC NULLS LAST,r.submitted_at DESC"),
     pool.query("SELECT place,points,medal FROM scoring_rules ORDER BY place"),
     pool.query("SELECT value FROM app_settings WHERE key='theme'")
@@ -91,7 +92,7 @@ app.get("/api/board", async (_req, res) => {
   res.json({ teams: teams.rows, events: events.rows, results: results.rows, rules: rules.rows, theme: settings.rows[0]?.value || {}, updatedAt: new Date().toISOString() });
 });
 app.get("/api/admin", identify, adminOnly, async (_req, res) => {
-  const [teams,sports,events,pending,tms,rules,invites,auditRows] = await Promise.all([
+  const [teams,sports,events,pending,tms,rules,invites,auditRows,allResults] = await Promise.all([
     pool.query("SELECT * FROM teams ORDER BY division,name"),
     pool.query("SELECT * FROM sports ORDER BY name"),
     pool.query("SELECT e.*,s.name AS sport FROM events e LEFT JOIN sports s ON s.id=e.sport_id ORDER BY s.name,e.name"),
@@ -99,9 +100,10 @@ app.get("/api/admin", identify, adminOnly, async (_req, res) => {
     pool.query("SELECT * FROM tm_accounts ORDER BY display_name,email"),
     pool.query("SELECT * FROM scoring_rules ORDER BY place"),
     pool.query("SELECT email,display_name,invited_at,active FROM invited_users ORDER BY invited_at DESC"),
-    pool.query("SELECT * FROM audit_logs ORDER BY created_at DESC LIMIT 200")
+    pool.query("SELECT * FROM audit_logs ORDER BY created_at DESC LIMIT 200"),
+    pool.query("SELECT r.*,e.name AS event,e.category,t.name AS team,s.name AS sport FROM results r JOIN events e ON e.id=r.event_id JOIN teams t ON t.id=r.team_id LEFT JOIN sports s ON s.id=e.sport_id ORDER BY r.submitted_at DESC LIMIT 300")
   ]);
-  res.json({ admin: { email: ADMIN, display_name: "Super Administrator" }, teams: teams.rows, sports: sports.rows, events: events.rows, pending: pending.rows, tms: tms.rows, rules: rules.rows, invites: invites.rows, audit: auditRows.rows });
+  res.json({ admin: { email: ADMIN, display_name: "Super Administrator" }, teams: teams.rows, sports: sports.rows, events: events.rows, pending: pending.rows, results: allResults.rows, tms: tms.rows, rules: rules.rows, invites: invites.rows, audit: auditRows.rows });
 });
 app.post("/api/admin", identify, adminOnly, async (req, res) => {
   const b = req.body || {}; const action = String(b.action || "");
@@ -147,14 +149,36 @@ app.put("/api/admin", identify, adminOnly, async (req, res) => {
     await audit(ADMIN,"tm-active","tm",b.email,{active:!!b.active});
     return res.json({ ok: true });
   }
+  if (b.action === "team-edit") {
+    const q=await pool.query("UPDATE teams SET name=$1,division=$2,color=$3 WHERE id=$4 RETURNING id",[String(b.name||"").trim(),String(b.division||"Overall"),String(b.color||"#D7A94B"),id]);
+    if(!q.rowCount)return res.status(404).json({error:"Team not found."});
+    await audit(ADMIN,"update","team",id,{name:b.name,division:b.division,color:b.color});return res.json({ok:true});
+  }
+  if (b.action === "sport-edit") {
+    const q=await pool.query("UPDATE sports SET name=$1 WHERE id=$2 RETURNING id",[String(b.name||"").trim(),id]);
+    if(!q.rowCount)return res.status(404).json({error:"Sport not found."});
+    await audit(ADMIN,"update","sport",id,{name:b.name});return res.json({ok:true});
+  }
+  if (b.action === "event-edit") {
+    const q=await pool.query("UPDATE events SET sport_id=$1,name=$2,category=$3,division=$4,status=$5 WHERE id=$6 RETURNING id",[b.sport_id||null,String(b.name||"").trim(),String(b.category||""),String(b.division||"Overall"),["scheduled","in_progress","completed"].includes(b.status)?b.status:"scheduled",id]);
+    if(!q.rowCount)return res.status(404).json({error:"Event not found."});
+    await audit(ADMIN,"update","event",id,{name:b.name,category:b.category,division:b.division});return res.json({ok:true});
+  }
+  if (b.action === "result-edit") {
+    const q=await pool.query("UPDATE results SET event_id=$1,team_id=$2,place=$3,points=$4,performance=$5,remarks=$6,status='pending',reviewed_by=NULL,reviewed_at=NULL,review_note=NULL WHERE id=$7 RETURNING id",[b.event_id,b.team_id,Number(b.place),Number(b.points),String(b.performance||"").slice(0,100),String(b.remarks||"").slice(0,500),id]);
+    if(!q.rowCount)return res.status(404).json({error:"Result not found."});
+    await audit(ADMIN,"correct-and-requeue","result",id,{event_id:b.event_id,team_id:b.team_id,place:b.place});return res.json({ok:true,message:"Corrected result returned to pending approval."});
+  }
   res.status(400).json({ error: "Unknown update." });
 });
 app.delete("/api/admin", identify, adminOnly, async (req, res) => {
-  const email = String(req.body.email || "").toLowerCase();
-  await pool.query("UPDATE tm_accounts SET active=false WHERE email=$1", [email]);
-  await pool.query("UPDATE invited_users SET active=false WHERE email=$1", [email]);
-  await audit(ADMIN,"tm-disabled","tm",email);
-  res.json({ ok: true });
+  const b=req.body||{}, action=String(b.action||""), id=String(b.id||"");
+  if(action==="tm"){const email=String(b.email||"").toLowerCase();await pool.query("UPDATE tm_accounts SET active=false WHERE email=$1",[email]);await pool.query("UPDATE invited_users SET active=false WHERE email=$1",[email]);await audit(ADMIN,"tm-disabled","tm",email);return res.json({ok:true})}
+  if(action==="team"){const q=await pool.query("UPDATE teams SET active=false WHERE id=$1 RETURNING id",[id]);if(!q.rowCount)return res.status(404).json({error:"Team not found."});await audit(ADMIN,"archive","team",id);return res.json({ok:true,message:"Team archived; historical results retained."})}
+  if(action==="sport"){const q=await pool.query("UPDATE sports SET active=false WHERE id=$1 RETURNING id",[id]);if(!q.rowCount)return res.status(404).json({error:"Sport not found."});await audit(ADMIN,"archive","sport",id);return res.json({ok:true,message:"Sport archived."})}
+  if(action==="event"){const q=await pool.query("UPDATE events SET active=false WHERE id=$1 RETURNING id",[id]);if(!q.rowCount)return res.status(404).json({error:"Event not found."});await audit(ADMIN,"archive","event",id);return res.json({ok:true,message:"Event archived; historical results retained."})}
+  if(action==="result"){const q=await pool.query("DELETE FROM results WHERE id=$1 RETURNING id,event_id,team_id,place,points,status,submitted_by",[id]);if(!q.rowCount)return res.status(404).json({error:"Result not found."});await audit(ADMIN,"delete","result",id,q.rows[0]);return res.json({ok:true,message:"Result deleted and recorded in the audit log."})}
+  return res.status(400).json({error:"Choose a supported record to remove."});
 });
 app.get("/api/tm", identify, tmOnly, async (req, res) => {
   const email = req.user.email;
@@ -187,6 +211,15 @@ app.put("/api/theme", identify, adminOnly, async (req,res) => {
   await audit(ADMIN,"theme-updated","settings",null,{keys:Object.keys(value)});
   res.json({ok:true});
 });
+app.get("/api/live", async (_req,res)=>{const q=await pool.query("SELECT value FROM app_settings WHERE key='live_bulletin'");res.json(q.rows[0]?.value||{title:"Division Athletic Meet",subtitle:"Official Live Coverage",venue:"",schedule:"",streamUrl:"",isLive:false})});
+app.put("/api/live", identify, adminOnly, async (req,res)=>{
+ const b=req.body||{},url=String(b.streamUrl||"").trim();
+ if(url&&!/^https?:\/\/(www\.)?(facebook\.com|fb\.watch)\//i.test(url))return res.status(400).json({error:"Use a public Facebook video or Facebook Live post URL."});
+ const value={title:String(b.title||"Division Athletic Meet").slice(0,120),subtitle:String(b.subtitle||"Official Live Coverage").slice(0,180),venue:String(b.venue||"").slice(0,180),schedule:String(b.schedule||"").slice(0,180),streamUrl:url,isLive:!!b.isLive};
+ await pool.query("INSERT INTO app_settings(key,value,updated_at) VALUES('live_bulletin',$1::jsonb,now()) ON CONFLICT(key) DO UPDATE SET value=EXCLUDED.value,updated_at=now()",[JSON.stringify(value)]);
+ await audit(ADMIN,"live-bulletin-updated","settings",null,{isLive:value.isLive,hasStream:!!url});res.json({ok:true,value});
+});
+app.get("/live",(_req,res)=>res.sendFile(path.join(__dirname,"public","live.html")));
 app.get("/login", (_req,res) => res.sendFile(path.join(__dirname,"public","login.html")));
 app.get("*", (_req,res) => res.sendFile(path.join(__dirname,"public","index.html")));
 app.use((err,_req,res,_next) => { console.error(err); res.status(500).json({error:"An unexpected server error occurred."}); });
