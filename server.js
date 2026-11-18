@@ -130,6 +130,30 @@ app.post("/api/admin", identify, adminOnly, async (req, res) => {
     await pool.query("INSERT INTO tm_accounts(email,display_name,password_hash,active) VALUES($1,$2,$3,true) ON CONFLICT(email) DO UPDATE SET display_name=EXCLUDED.display_name,password_hash=EXCLUDED.password_hash,active=true", [email,b.display_name || email,passwordHash]);
     await pool.query("DELETE FROM tm_event_assignments WHERE email=$1", [email]);
     for (const id of ids) await pool.query("INSERT INTO tm_event_assignments(email,event_id) VALUES($1,$2) ON CONFLICT DO NOTHING", [email,id]);
+  } else if (action === "import-results") {
+    const rows=Array.isArray(b.rows)?b.rows:[];
+    if(!rows.length)return res.status(400).json({error:"No result rows were supplied."});
+    if(rows.length>500)return res.status(400).json({error:"A maximum of 500 rows can be imported per batch."});
+    const [events,teams,rules]=await Promise.all([pool.query("SELECT id,name,category FROM events WHERE active=true"),pool.query("SELECT id,name FROM teams WHERE active=true"),pool.query("SELECT place,points FROM scoring_rules")]);
+    const norm=v=>String(v??"").trim().toLocaleLowerCase();
+    const outcomes=[];
+    for(let index=0;index<rows.length;index++){
+      const row=rows[index]||{},event=events.rows.find(e=>norm(e.name)===norm(row.event_name)&&(norm(row.category)===""||norm(e.category)===norm(row.category))),team=teams.rows.find(t=>norm(t.name)===norm(row.team_name)),place=Number(row.place),rule=rules.rows.find(r=>Number(r.place)===place);
+      let error="";
+      if(!row.event_name||!event)error="Event not found. Check Event Name and Category against the reference list.";
+      else if(!team)error="Team not found. Check Team Name against the reference list.";
+      else if(!Number.isInteger(place)||place<1||place>8||!rule)error="Invalid placement or no scoring rule configured.";
+      if(error){outcomes.push({row:index+2,status:"error",message:error});continue}
+      const dup=await pool.query("SELECT id FROM results WHERE event_id=$1 AND place=$2 AND status IN('pending','approved')",[event.id,place]);
+      if(dup.rowCount){outcomes.push({row:index+2,status:"error",message:"A pending or approved result already exists for this event and placement."});continue}
+      const points=row.points===""||row.points===undefined?Number(rule.points):Number(row.points);
+      if(!Number.isFinite(points)||points<0){outcomes.push({row:index+2,status:"error",message:"Points must be a valid non-negative number."});continue}
+      const q=await pool.query("INSERT INTO results(event_id,team_id,place,points,performance,remarks,submitted_by,status) VALUES($1,$2,$3,$4,$5,$6,$7,'pending') RETURNING id",[event.id,team.id,place,points,String(row.performance||"").slice(0,100),String(row.remarks||"").slice(0,500),ADMIN]);
+      await audit(ADMIN,"csv-import-pending","result",q.rows[0].id,{event_id:event.id,team_id:team.id,place,points,csv_row:index+2});
+      outcomes.push({row:index+2,status:"pending",id:q.rows[0].id,message:"Added to Pending Approval."});
+    }
+    await audit(ADMIN,"csv-import","results",null,{total:rows.length,accepted:outcomes.filter(x=>x.status==="pending").length,rejected:outcomes.filter(x=>x.status==="error").length});
+    return res.json({ok:true,accepted:outcomes.filter(x=>x.status==="pending").length,rejected:outcomes.filter(x=>x.status==="error").length,outcomes});
   } else if (action === "manual-result") {
     const eventId=String(b.event_id||""), teamId=String(b.team_id||""), place=Number(b.place);
     if(!eventId||!teamId||!Number.isInteger(place)||place<1||place>8)return res.status(400).json({error:"Choose an event, team, and valid placement."});
@@ -227,6 +251,16 @@ app.put("/api/theme", identify, adminOnly, async (req,res) => {
   await pool.query("INSERT INTO app_settings(key,value,updated_at) VALUES('theme',$1::jsonb,now()) ON CONFLICT(key) DO UPDATE SET value=EXCLUDED.value,updated_at=now()", [JSON.stringify(value)]);
   await audit(ADMIN,"theme-updated","settings",null,{keys:Object.keys(value)});
   res.json({ok:true});
+});
+app.get("/api/results-template.csv", identify, adminOnly, async (_req,res)=>{
+ const csv=["Event Name,Category,Team Name,Place,Performance,Remarks","100m Dash,Secondary Boys,Sample School,1,11.25 sec,Replace this sample row with actual results"].join("\r\n");
+ res.setHeader("Content-Type","text/csv; charset=utf-8");res.setHeader("Content-Disposition",'attachment; filename="Division_Athletic_Meet_Results_Template.csv"');res.send("\uFEFF"+csv);
+});
+app.get("/api/results-reference.csv", identify, adminOnly, async (_req,res)=>{
+ const [events,teams]=await Promise.all([pool.query("SELECT e.name,e.category,e.division,s.name AS sport FROM events e LEFT JOIN sports s ON s.id=e.sport_id WHERE e.active=true ORDER BY s.name,e.name"),pool.query("SELECT name,division FROM teams WHERE active=true ORDER BY name")]);
+ const q=v=>'"'+String(v??"").replace(/"/g,'""')+'"';
+ const lines=["Record Type,Sport,Event Name,Category,Division,Team Name","EVENT",...events.rows.map(e=>["EVENT",e.sport,e.name,e.category,e.division,""].map(q).join(",")),"TEAM",...teams.rows.map(t=>["TEAM","","","",t.division,t.name].map(q).join(","))];
+ res.setHeader("Content-Type","text/csv; charset=utf-8");res.setHeader("Content-Disposition",'attachment; filename="Division_Athletic_Meet_Reference_List.csv"');res.send("\uFEFF"+lines.join("\r\n"));
 });
 app.get("/api/live", async (_req,res)=>{const q=await pool.query("SELECT value FROM app_settings WHERE key='live_bulletin'");res.json(q.rows[0]?.value||{title:"Division Athletic Meet",subtitle:"Official Live Coverage",venue:"",schedule:"",streamUrl:"",isLive:false})});
 app.put("/api/live", identify, adminOnly, async (req,res)=>{
